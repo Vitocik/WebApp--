@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <!-- Мета-теги для корректного отображения -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Регистрация СКФУ</title>
+  
+  <!-- Подключение необходимых библиотек -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script> <!-- Telegram WebApp SDK -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script> <!-- Vue.js 3 -->
+  <script src="https://cdn.tailwindcss.com"></script> <!-- Tailwind CSS -->
+</head>
+
+<!-- Основная разметка с градиентным фоном -->
+<body class="bg-gradient-to-r from-blue-900 via-blue-700 to-blue-300 p-4 md:p-6">
+  <!-- Контейнер приложения Vue -->
+  <div id="app" class="max-w-md mx-auto bg-white p-4 md:p-6 rounded-lg shadow-lg">
+    <!-- Логотип -->
+    <div class="text-center mb-4">
+      <img src="logo_scfu.jpg" alt="СКФУ" class="mx-auto w-20 h-20 md:w-24 md:h-24" />
+    </div>
+
+    <!-- Заголовок формы (меняется в зависимости от режима) -->
+    <h2 class="text-xl md:text-2xl font-bold mb-4 text-center">
+      {{ isUpdateMode ? 'Обновление данных' : 'Регистрация в СКФУ' }}
+    </h2>
+
+    <!-- Форма регистрации -->
+    <form @submit.prevent="handleSubmit">
+      <!-- Поле "Фамилия" (обязательное) -->
+      <div class="mb-3">
+        <label class="block text-sm font-medium mb-1">Фамилия *</label>
+        <input v-model="formData.last_name" type="text" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" required />
+      </div>
+
+      <!-- Поле "Имя" (обязательное) -->
+      <div class="mb-3">
+        <label class="block text-sm font-medium mb-1">Имя *</label>
+        <input v-model="formData.first_name" type="text" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" required />
+      </div>
+
+      <!-- Поле "Отчество" (необязательное) -->
+      <div class="mb-3">
+        <label class="block text-sm font-medium mb-1">Отчество</label>
+        <input v-model="formData.patronymic" type="text" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" />
+      </div>
+
+      <!-- Поле "Email" (обязательное только при регистрации) -->
+      <div class="mb-3">
+        <label class="block text-sm font-medium mb-1">Email <span v-if="!isUpdateMode">*</span></label>
+        <input v-model="formData.email" type="email" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" :required="!isUpdateMode" />
+        <p v-if="errors.email" class="text-red-600 text-sm mt-1">{{ errors.email }}</p>
+      </div>
+
+      <!-- Поле "Телефон" (обязательное только при регистрации) -->
+      <div class="mb-3">
+        <label class="block text-sm font-medium mb-1">Телефон <span v-if="!isUpdateMode">*</span></label>
+        <input v-model="formData.phone" type="tel" placeholder="89620102290" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500" :required="!isUpdateMode" />
+        <p v-if="errors.phone" class="text-red-600 text-sm mt-1">{{ errors.phone }}</p>
+      </div>
+
+      <!-- Выпадающий список "Роль в ВУЗе" -->
+      <div class="mb-4">
+        <label class="block text-sm font-medium mb-1">Роль в ВУЗе</label>
+        <select v-model="formData.role" class="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500">
+          <option value="student">Студент</option>
+          <option value="applicant">Абитуриент</option>
+          <option value="staff">Сотрудник</option>
+        </select>
+      </div>
+
+      <!-- Кнопка отправки формы -->
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded transition duration-200">
+        {{ isUpdateMode ? 'Обновить данные' : 'Зарегистрироваться' }}
+      </button>
+    </form>
+
+    <!-- Блок для отображения сообщения об успехе -->
+    <div v-if="successMessage" class="mt-4 p-3 bg-green-100 text-green-800 rounded shadow">
+      {{ successMessage }}
+    </div>
+  </div>
+
+  <script>
+    // Инициализация Vue приложения
+    const { createApp, ref } = Vue;
+
+    // Конфигурация API
+    const API_CONFIG = {
+      BASE_URL: 'https://stage.metabot.dev/api/v1/bots/2278/call',
+      ENDPOINTS: {
+        REGISTER: 'ncfu_register' // Конечная точка для регистрации
+      },
+      AUTH_TOKEN: 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI2NyIsImp0aSI6ImRkOGE5YmViZjM3Nzk0NmZmMjc4ODBmZGYxNGI1OGNjMTNlMjJiNTNmMGM4NWQwMjUwZjA2NzgyMWIwYzE4YzUyY2QwOTFhYmQ3MzI2OWM2IiwiaWF0IjoxNzQxMzY0OTkyLjkzNjA2NiwibmJmIjoxNzQxMzY0OTkyLjkzNjA2OCwiZXhwIjoyMDU2NzI0OTkyLjkyOTI3Nywic3ViIjoiIiwic2NvcGVzIjpbIioiXX0.rjb5aCqTfwBycDvEkrNhUD1YUv77V_S4CzUrdkb1qVLgjy01HimYyfvDFH57VoYREj2cVstgLEcFrFJ62DdQGyGMA1aj5g_y3WTNuIPufHAWEkaOP4WtwnTUhsZ3jJkeXFNYBVNUSIJS565SZXCrk2TkY-e2-V64ETOuf-e4Xmkv5qo3MSnuszEq5mP3NlwH6YgBYrPD1mnwkH6Q8kaETXuJNQwgNqQjsyLNaF_krKjMq6n41dsclKoNZIWr2BKiwzuif4F_Oj6d54sMwLTJsp2uuq6UOU80Zy-Jy_SE1-o2gbOjnKGJPXHgmtvpiB8cVGrszPci0evD_sCBDk2UtZ59e-5y8YxX4cBVRtGkX9nNRvojdohcU_ixf8br5Ov-aq9KLvRZM0mxVHfDPanlirpyq5LlZCUhMl-pE-h3gE-Ovs0v3JE3lsJKjodkcTijlWaoE-XkGW5AtfasZCqfRasqOTMyN70ogtJgetYpvLyYdxq01g5xbAOeaTe2ydiJ0XvWD3UtQnqUPpaWB8vCKhXKNvkDmtLvwZYQTiXEu4Djo3AXscgIi_Z5ajyACyNFAASphPWkc9cjrrxZpgRSEMU56Fy4nQQa70PlaDHMUmsK_yd819fVnuNB4NZ1hOhCH6B68r3IHKbIYJtxCqs72drQn5IqVLIK5FBmjiCLI0s' // Токен авторизации
+    };
+
+    createApp({
+      setup() {
+        // Реактивные данные формы
+        const formData = ref({
+          last_name: '',
+          first_name: '',
+          patronymic: '',
+          email: '',
+          phone: '',
+          role: 'student' // Значение по умолчанию
+        });
+
+        // Реактивные переменные состояния
+        const successMessage = ref('');
+        const isUpdateMode = ref(false); // Режим обновления данных
+        const leadHash = ref(null); // Хэш лида для режима обновления
+
+        // Ошибки валидации
+        const errors = ref({
+          email: '',
+          phone: ''
+        });
+
+        // Инициализация приложения
+        const init = () => {
+          // Проверяем параметры URL для режима обновления
+          const urlParams = new URLSearchParams(window.location.search);
+          leadHash.value = urlParams.get('leadHash');
+          isUpdateMode.value = !!leadHash.value;
+
+          // Интеграция с Telegram WebApp
+          if (window.Telegram?.WebApp) {
+            const WebApp = window.Telegram.WebApp;
+            // Настройка кнопки в Telegram интерфейсе
+            WebApp.MainButton.setText(isUpdateMode.value ? 'Обновить' : 'Отправить');
+            WebApp.MainButton.show();
+            WebApp.MainButton.onClick(handleSubmit);
+            WebApp.expand(); // Разворачиваем приложение на весь экран
+          }
+        };
+
+        // Валидация формы
+        const validate = () => {
+            const data = formData.value;
+            errors.value.email = '';
+            errors.value.phone = '';
+            let isValid = true;
+
+            // Проверка обязательных полей
+            if (!data.last_name.trim() || !data.first_name.trim()) {
+                isValid = false;
+            }
+
+            // В режиме регистрации проверяем email и телефон
+            if (!isUpdateMode.value) {
+                // Валидация email
+                const email = data.email.trim();
+                const allowedDomains = [
+                'gmail.com', 'yahoo.com', 'mail.ru', 'yandex.ru', 'yandex.com',
+                'outlook.com', 'icloud.com', 'bk.ru', 'list.ru', 'inbox.ru', 'rambler.ru'
+                ];
+
+                if (!email) {
+                errors.value.email = 'Email обязателен';
+                isValid = false;
+                } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                errors.value.email = 'Некорректный формат email';
+                isValid = false;
+                } else {
+                const domain = email.split('@')[1];
+                if (!allowedDomains.includes(domain)) {
+                    errors.value.email = 'Неизвестный домен электронной почты';
+                    isValid = false;
+                }
+                }
+
+                // Валидация телефона
+                const phone = data.phone.trim();
+                const numericPhone = phone.replace(/\D/g, '');
+
+                if (!phone) {
+                errors.value.phone = 'Телефон обязателен';
+                isValid = false;
+                } else if (
+                !(phone.startsWith('+7') || phone.startsWith('8')) ||
+                numericPhone.length !== 11
+                ) {
+                errors.value.phone = 'Телефон должен начинаться с +7 или 8 и содержать 11 цифр';
+                isValid = false;
+                }
+            }
+
+            return isValid;
+        };
+
+        // Обработка отправки формы
+        const handleSubmit = async () => {
+          // Проверяем валидность формы
+          if (!validate()) return;
+
+          // Подготовка данных для отправки
+          const payload = {
+            ...formData.value,
+            phone: formData.value.phone.replace(/\D/g, ''), // Очищаем телефон от нецифровых символов
+            comment: formData.value.role // Используем роль как комментарий
+          };
+
+          const tg = window.Telegram?.WebApp;
+
+          // Особенности для режима обновления
+          if (isUpdateMode.value) {
+            payload.leadHash = leadHash.value;
+            // Транслитерация кириллических имен
+            payload.last_name = transliterate(payload.last_name);
+            payload.first_name = transliterate(payload.first_name);
+            if (payload.patronymic) payload.patronymic = transliterate(payload.patronymic);
+          } else {
+            // Добавляем данные Telegram пользователя при регистрации
+            payload.telegramId = tg?.initDataUnsafe?.user?.id || 'unknown';
+            payload.initData = tg?.initData || '';
+          }
+
+          try {
+            // Отправка данных на сервер
+            const response = await fetch(`${API_CONFIG.BASE_URL}/${API_CONFIG.ENDPOINTS.REGISTER}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': API_CONFIG.AUTH_TOKEN
+              },
+              body: JSON.stringify({ script_request_params: payload })
+            });
+
+            // Обработка успешного ответа
+            if (response.ok) {
+              successMessage.value = 'Спасибо за регистрацию! Ваши данные успешно отправлены.';
+              // Закрываем WebApp через 2 секунды
+              setTimeout(() => {
+                tg?.close();
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('API Error:', error);
+          }
+        };
+
+        // Функция транслитерации кириллицы в латиницу
+        const transliterate = (text) => {
+          if (!text) return '';
+          const map = {
+            'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
+            'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+            'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
+            'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+            'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'E', 'Ж': 'Zh',
+            'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
+            'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts',
+            'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+          };
+          return text.split('').map(char => map[char] || char).join('');
+        };
+
+        // Инициализируем приложение
+        init();
+
+        // Экспортируем данные и методы для использования в шаблоне
+        return {
+          formData,
+          isUpdateMode,
+          handleSubmit,
+          successMessage,
+          errors
+        };
+      }
+    }).mount('#app'); // Монтируем приложение в div с id="app"
+  </script>
+</body>
+</html>
